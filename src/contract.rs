@@ -1,15 +1,11 @@
 #[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Addr, Storage, Uint128};
+use cosmwasm_std::{entry_point, to_binary, to_vec, from_slice, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdError, StdResult, Addr, Storage, Uint128};
 use cosmwasm_storage::{Bucket, ReadonlyBucket, bucket, bucket_read};
-use cw2::set_contract_version;
 
 use crate::error::ContractError;
 use crate::msg::{BalanceResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{State, STATE};
+use crate::state::{State, CONFIG_KEY};
 
-const CONTRACT_NAME: &str = "crates.io:cw-facepalm-coin";
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const PREFIX_BALANCE: &[u8] = b"balance";
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -22,12 +18,13 @@ pub fn instantiate(
     let owner = info.sender.clone();
     let initial_balance = msg.initial_balance.clone();
 
-    let state = State {
-        burn_address: msg.burn_address.clone(),
-        owner: owner.clone()
-    };
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.storage, &state)?;
+    deps.storage.set(
+        CONFIG_KEY,
+        &to_vec(&State {
+            burn_address: msg.burn_address.clone(),
+            owner: owner.clone()
+        })?,
+    );
 
     let owner_raw = deps.api.addr_canonicalize(owner.clone().as_str())?;
     balance(deps.storage).update(&owner_raw, |balance| -> StdResult<_> {
@@ -75,8 +72,12 @@ pub fn transfer(deps: DepsMut, sender: Addr, receiver: Addr, amount: Uint128) ->
 }
 
 pub fn burn(deps: DepsMut, sender: Addr, amount: Uint128) -> Result<Response, ContractError> {
-    let state = STATE.load(deps.storage).ok().unwrap();
-    transfer(deps, sender, state.burn_address, amount)
+    let data = deps
+        .storage
+        .get(CONFIG_KEY)
+        .ok_or_else(|| StdError::not_found("State"))?;
+    let config: State = from_slice(&data)?;
+    transfer(deps, sender, config.burn_address, amount)
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -112,7 +113,7 @@ mod tests {
     #[test]
     fn instantiate_transfer_burn() {
         // instantiate
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_dependencies();
         let msg = InstantiateMsg { burn_address: Addr::unchecked("burnbabyburn"), initial_balance: Uint128::new(1000) };
         let info = mock_info("foo", &[]);
         instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();

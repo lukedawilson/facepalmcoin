@@ -1,13 +1,11 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
 use cosmwasm_std::{Addr};
-use cw_storage_plus::Item;
+
+pub const CONFIG_KEY: &[u8] = b"config";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct State {
     pub burn_address: Addr,
     pub owner: Addr
 }
-
-pub const STATE: Item<State> = Item::new("state");
